@@ -1,0 +1,71 @@
+#!/bin/sh
+#	icmond scrubber 11.09.2016, Jani Tammi
+#
+#	Modified in 2016 for update firmware.
+#	Valid for:
+#	Current Software Revision: 	epc3825-v302r125574-140405c
+#	Firmware Name:		 	epc3825-v302r125574-140405c.bin
+#	Firmware Build Time: 		Apr 5 02:32:49 2014
+#
+DELIMITER=";"
+D=$DELIMITER
+TIMESTAMP=$(date +%s)
+
+# Accept and demand ONE argument : the modem IP
+if [ $# -ne 1 ]; then
+  echo "usage: $0 <modem ip>"
+  exit 1;
+fi
+
+MODEIP=$1
+
+# Run once
+
+  # These need to be updated each loop...
+  DATETIME=`date "+%Y.%m.%d %H:%M:%S"`
+  SAVEHTML="/tmp/docsis-"`date "+%Y.%m.%d_%H.%M.%S"`".html"
+
+  wget --quiet -O $SAVEHTML http://$MODEIP/Docsis_system.asp
+  EXITCODE=$?
+
+  if [ $EXITCODE -ne 0 ]; then
+    echo "[$DATETIME] wget could not retrieve Docsis_system.asp - return code ($EXITCODE)" #>> $LOGFILE
+#    echo -n "0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}" >> $SAVECSV
+#    echo    "0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0\r"   >> $SAVECSV
+    rm $SAVEHTML
+    exit 1;
+  else
+    # 2016, rewritten to read new firmware's HTML output
+    # EXTRACTS ONLY THE DOWNSTREAM <table>
+    DOWNTAB=`cat $SAVEHTML | sed -e '/.*<table class=\"std\" summary=\"Downstream Channels\">/,/<\/table>.*/!d'`
+    # strip tags and remove multiple spaces
+    DOWNRAW=`echo $DOWNTAB | sed 's/<[^>]\+>/ /g' | sed -e 's/  */ /g'`
+
+    DCH1=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 1[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH2=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 2[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH3=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 3[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH4=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 4[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH5=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 5[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH6=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 6[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH7=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 7[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH8=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 8[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+
+    # EXTRACTS ONLY THE UPSTREAM <table>
+    UPTAB=`cat $SAVEHTML | sed -e '/.*<table class=\"std\" summary=\"Upstream Channels\">/,/<\/table>.*/!d'`
+    # strip tags and remove multiple spaces
+    UPRAW=`echo $UPTAB | sed 's/<[^>]\+>/ /g' | sed -e 's/  */ /g'`
+
+    UCH1=`echo $UPRAW |  sed -n 's/.*dw(vs_channel); 1[^0-9]*\([0-9]*\.[0-9]\).*/\1/p'`
+    UCH2=`echo $UPRAW |  sed -n 's/.*dw(vs_channel); 2[^0-9]*\([0-9]*\.[0-9]\).*/\1/p'`
+    UCH3=`echo $UPRAW |  sed -n 's/.*dw(vs_channel); 3[^0-9]*\([0-9]*\.[0-9]\).*/\1/p'`
+    UCH4=`echo $UPRAW |  sed -n 's/.*dw(vs_channel); 4[^0-9]*\([0-9]*\.[0-9]\).*/\1/p'`
+
+    printf ${TIMESTAMP}"="
+    printf "${DCH1}${D}${DCH2}${D}${DCH3}${D}${DCH4}${D}${DCH5}${D}${DCH6}${D}${DCH7}${D}${DCH8}${D}"
+    printf "${UCH1}${D}${UCH2}${D}${UCH3}${D}${UCH4}\n"
+ #	sed -e 's/\./,/g' # comma would be a list separator...
+  fi
+  rm $SAVEHTML
+
+exit 0;
+# EOF

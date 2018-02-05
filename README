@@ -1,0 +1,638 @@
+icmond ver. 0.6 - Internet connection monitor (c) 2012 Jani Tammi
+Distributed under the terms of the GNU General Public License
+http://www.gnu.org/licenses/gpl.txt
+
+REQUIREMENTS
+
+Compile
+	# apt-get install sqlite3 sqlite
+	# apt-get install libcap-dev
+
+	-lcap -lsqlite3 -lrt
+	(capacilities, SQLite3 and clock/timer in posix4 "librt")
+
+Install & Run
+	Linux kernel 2.6.25 or later. (for capabilities)
+	libcap2-bin tools (capsh, getpcaps, getcap, setcap)
+	# setcap cap_net_raw+epi icmond
+
+Known Issues
+	- Not IPv6 compliant
+	- Linux tunkki 2.6.32-5-486 NOT SUPPORTED (sys/capability.h missing)
+	- Does not conform to new-style daemon model
+	  https://www.freedesktop.org/software/systemd/man/daemon.html#New-Style%20Daemons
+
+What is icmond?
+
+	Created originally for personal usage as my ISP (Sonera) delivered one of the
+	worst DOCSIS cable internet connections imaginable. This coupled with their
+	attitudes trying to implicate the user as the offending party in whatever
+	flimsy excuse - or just flat out claim that there was no issues.
+
+	Sometimes they did something and the problem was corrected, sometimes they
+	did nothing and after a few weeks something changed and the connection was
+	more or less usable again. But the problems would resurface several times
+	a year.
+
+	Proof was needed to back my demands for fixing the issues and to counter
+	their lame excuses that "nothing can be seen from our end".
+
+	===========================================================================
+	ICMOND monitors internet connectivity and collects channel data from
+	Cisco EPC DOCSIS modems.
+	===========================================================================
+
+	After a few years, Sonera's attitudes changed notably, and they grew a spine.
+	However, the quality of service was as appalling as ever and has continued
+	to be so over a period of 10 yeras now. At least they are now willing to
+	work on the issues and have not tried to deny any issues for many years.
+
+Why would you need this?
+
+	If you are also a customer who's internet is delivered via TV cables, you
+	are likely to experience similar substandard service for the simple reason
+	that the technology that it utilizes is inherently unreliable in real life
+	conditions.
+
+	You may need the logs to prove that there are infact issues. They may also
+	help the tech staff to identify the nature of the issue (but this is very
+	much dependant on the staff - only one person ever was even willing to look
+	at the graphs and data).
+
+	...but you can use the data to make claims for reimbursements when your
+	service has been faulty for extended periods.
+
+Does icmond support my modem?
+
+	Since I had only one device, obviously, I created only one line data
+	collection adapter. But the ping based network connectivity testing will
+	work for you always.
+
+	If you are confident in your skills, nothing prevents you from creating
+	your own adapter to collect line data from your own modem, of course.
+
+Inet Ping Hosts
+
+	A Windows similar, called "Net Uptime Monitor" (https://netuptimemonitor.com/)
+	has chosen three default inet hosts; Google DNS (8.8.8.8), Level 3 (4.2.2.2)
+	and	OpenDNS (208.67.222.222).
+	
+	Their site writes:
+	"The three default servers are extremely high reliability, public, and free.
+	OpenDNS provides services to over 50 million users every time one of those
+	users enters a web site address in their browser. Level 3 is one of only
+	six	main providers (Tier 1 networks) of the internet backbone in the United
+	States and around the world. And Google is – well, it’s Google"
+
+	Google DNS:
+	"The addresses are mapped to the nearest operational server by anycast routing."
+	This means that Google DNS would potentially be "close" ping server no matter
+	where the user is actually located.
+
+===============================================================================
+== DESIGN NOTES
+===============================================================================
+
+Runtime Parameters
+
+.config -key	cmdline -key	cfg. -member	Default; Range
+-------------------------------------------------------------------------------
+dst				dst				.use_dst		auto; ignore, apply
+suspend			suspend			.schedule		(null); HH:MM [ON|OFF]
+
+Suspended Schedule
+
+	User may define a set of events consisting of time and commands.
+	Time is in format "HH:MM" and may be separated by space from the
+	following command string; "ON" or "OFF". Example:
+	
+	suspend = 04:25 OFF, 05:15 ON
+
+	Times are in localtime while the system runs in UTC. For example, Finland
+	runs in EET, which is UTC+2. When user wishes to enter suspended more at
+	04:25, it needs to be scheduled in UTC;
+	
+	04:25 local time - (+2h) = 02:25 UTC
+
+	Daylight Savings
+
+	Local time offset can change twice a year when some areas enter and exit
+	Daylight Savings Time. So, if the program is expected enter suspended mode
+	at 04:25 in June, it will need to happen one hour earlier than if it were
+	December:
+
+	04:25 local time DTS - (+3h) = 01:25 UTC
+
+	Application of DST is configurable option. User propably wishes to ignore
+	DST if he has scheduled a modem reset using a programmable 24-hour timer
+	plug and just wants to avoid collecting bad data during that period.
+
+	Default configuration value for this setting is "auto". All it does is to
+	look at "control" configuration value; if control is defined, DST will be
+	applied ("dst = apply") . If there is no "control", a mechanical timer plug
+	is assumed that cannot adjust itself to DST and DST will also be ignored by
+	the program ("dst = ignore").
+
+	[ST]  Standard Local Time   (DST is ignored) 
+	[DST] DST Local Time        (DST is applied)
+
+Control (to be renamed)
+
+	If user has defined a control interface, the program will also send the
+	appropriate control signal when an event triggers.
+
+	In the above example (/etc/icmond.conf);
+		suspend = 04:25 OFF, 05:15 ON
+		dst = auto
+		control = bcm2835:gpio1
+
+	Other control interfaces are expected to be;
+
+	usb:<port>
+	upd:<ip>:port
+	tcp:<ip>:port
+
+	NOTE: COMPLETELY UNRESEARCHED AS OF YET
+
+Processes vs Threads
+
+	Short answer: processes
+
+	Benefits of threads are essentially two-fold; better performance and
+	easier datasharing. One could think that threads are about a group
+	effort and processes are about independent assignments.
+
+	So, why does Apache, for example, use processes?
+	- Each page request is independent work (no real need to share data)
+	- Processes (with separate memory spaces) offer security!
+	- Processes offer stability (if HTTP request processing creates
+	  problems, they do not affect the whole service, just clients of
+	  that process - and this is why they are periodically killed and
+	  recreated).
+
+	This daemon is expected to run continuously without administration
+	for years. The tasks are very light and performace is not an issue.
+	Other than the main_loop for the daemon, none of the tasks are
+	persistent - they more resemble Apache, except it is the daemon
+	itself that periodically requests data to be retrieved.
+
+	For this daemon, processes seem to offer aspects that we want and
+	threads have very little to offer.
+
+Runtime parameters (aka. configuration)
+
+	For convenience reasons, a simple model has been adopted. There are
+	three "sources" for configuration parameters;
+
+	1. Compiled in defaults
+	2. Configuration file
+	3. Commandline arguments
+
+	That is also the order that they get written into the internal data
+	structure, which means that later will overwrite the earlier.
+	Or in otherwords, commandline arguments take "the highest priority"
+	and are used, regardless of what is dictated in the configuration
+	file.
+
+	This make sense from the user experience.
+
+	Should compiled in default or configuration file directive be
+	undesireable, it is correct to offer the user a quick way to try
+	another setting simply by invoking the executable with the new
+	value.
+
+	Compiled in parameters exist for ultimate convenience. They allow
+	simply to execute the program and default functionality.
+
+	This makes more sense when it is recalled that this daemon should be
+	runnable for users as well as the intended root invocation.
+
+Long term reliability
+
+    While the program cannot counter outside factors, such as necessary
+    files being deleted by admin/third parties, we can at least ensure
+    that the daemon keeps on ticking intervals reliably, in hopes that
+    administration notices our warnings and/or error messages and corrects
+    the situation.
+
+    Daemon process shall do nothing else than maintain the interval timer
+    and spawn a separate worker process that does the datalogging. ...and
+    of course monitor SIGHUP and SIGTERM signals.
+
+    Worker process will execute data scrubber (external solution which
+    retrieves line data from EPC3825 DOCSIS 3.0 cable modem) and ICMP
+    (aka. ping) response delay (or failure to reply). It will also write
+    the results into the database.
+
+    This way, all the possible things that could go wrong with interfacing
+    with external items (scrubber and database file, at the minimum), are
+    left to the worker process which can fail catastrophically and the
+    actual daemon will remain unaffected (as opposed to threads that might
+    mess up memory/variables).
+
+Who writes to the database
+
+	In order to avoid IPC schemes and reliability issues, worker process
+    is tasked with database access.
+
+IPC Stragegies
+
+	Any book will tell you of two main flavors;
+
+	1. Pipes (half-duplex and FIFO's)
+	2. System V IPC (queues and semaphores)
+
+    Overlooked and simplest is return code. Sometimes you send the child
+    process off and all you need back is a simple value. If you can leverage
+    that into your return code, do so.
+
+	This daemon essentially has two datasource;
+
+	- ICMP package delay (from internal implementation, I hope)
+	- 20 float values scrubbed from DOCSIS modem HTML UI
+	  (by external scrubber script)
+
+Intervals and Timeouts
+
+    Allowed logging interval is between 5 seconds and 1 hours.
+    ICMP (ping) Timeout may be set between 1 second and 10 seconds.
+
+    There is an obvious conflict between frequent intervals (<10 sec) and long
+    timeout for ping's pong:
+
+    Let's consider that our logging interval is 5 seconds and our ping timeout
+    is full 10 seconds. This could lead to one worker process still mid-timeout
+    for ping's pong while a second worker is spawned. It could lead to a
+    situation where the two different worker processes now wish to write their
+    data simultaneously to the database.
+
+    This will not be an issue, when the necessary code is written into the worker.
+    SQLite3 has mechanisms to support "busy" state reporting and when worker
+    observes this with suitable wait's, each worker can insert their data.
+
+    It is of no consequence that the data may not be ordered in the table
+    (older worker process writes it's data after newer worker process).
+    Reporting from SQL simply uses ORDER BY clauses if necessary.
+
+Scheduling
+
+	icmond features a scheduler that uses one timeout timer fd which it
+	reprograms each time. The timer may be completely inactive, if user has not
+	defined any events.
+
+	From daemon main loop's perspective, schedule is merely one function call
+	when the timer fd triggers. Scheduler will reset it's own timer and activate
+	it.
+
+	Schedule table (daily events)
+	
+	local time		Command		Next Trigger (UTC+0)
+	04:25			SUSPEND		1475209500
+	04:40			PWRON		1475210400
+	04:45			RESUME		1475210700
+
+	START UP DELAY : 5 min
+	When ON -command is to be scheduled next AND control has been defined,
+	an additional event will be scheduled startupdelay seconds earlier than
+	the ON -command. This happens automatically during the schedule list
+	compilation phase.
+
+	If Control is defined, suspend is also automatically a PWROFF event.
+
+int scheduler()
+{
+	/*
+	 * last_event always points to the last executed event and it's next_trigger
+	 * will ALWAYS be furthest away to the future!
+	 */
+	event_t *last_evet = NULL; // startup will make this to point to the correct one
+	time_t   now = time(NULL);
+	event_t *next_event = NULL;
+	for (;next_event->next_trigger < now;
+		last_event = (next_event ? next_event : last_event),
+		next_event = (*(last_event + 1) ? last_event + 1 : *schedule))
+	{
+		switch (next_event->command)
+		{
+			case SUSPEND:
+				instance.suspended_by_schedule = true;
+				break;
+			case RESUME:
+				instance.suspended_by_schedule = false;
+				break;
+			case PWROFF:
+				control_pwroff();
+				break;
+			case PWRON:
+				control_pwron();
+				break;
+			default:
+				PANIC_AND_PANDEMONIUM();
+		}
+		// Add 24 hours to .next_trigger so that this event will happen again next day
+		next_event->next_trigger += SECONDS_PER_DAY; // NO NO NO!!! Must be complex DST capable function!
+		event_reschedule(next_event);
+	}
+	// Now, next_event points to an event that is not due to trigger yet
+	// Update scheduler timer fd's timerspec.it_value.tv_sec = next_event->next_trigger 
+	// and rearm timer.
+	timer_activate();
+}
+
+Privilege drop
+
+    There are three ID's of both kind (User ID and Group ID):
+    1. Effective ID
+    2. Real ID
+    3. Saved ID
+
+    In order to achieve proper privilege drop, all three ID's need to match the
+    desired ID. Implementation is pretty simple, but the real interest here was
+    how to verify the outcome within the program code. Unfortunately, clean way
+    to do this was not found.
+
+    Only way to see all the ID's that I know of, is to read them from:
+
+    cat /proc/<pid>/task/<pid>/status
+
+    rows:  Real    Eff    Saved   FSID      (this IS the correct order!)
+    ...
+    Uid:    1       1       1       1
+    Gid:    1       1       1       1
+
+    NOTE: FSID is Linux specific Filesystem ID, and it will always follow
+    real ID unless explicitly set to some other value. Thus we can ignore
+    this safely.
+
+    It is also recommended to lose any ancillary groups for the process, as
+    those may open up security vulnerabilities. They should be dropped before
+    doing anything else because the setgroups() system call requires root
+    privileges.
+
+setcap(8) for icmond
+
+	While we reliquish root privileges to be nice and hopefully reduce
+	the likelyhood that this daemon is used for malicious purposes, we still
+	need a little bit of root privileges for ICMP/ping.
+
+	This is achieved through POSIX IEEE 1003.1e -like Capability Architecture.
+	(NOTE: 1003.1e was a draft and withdrawn 1997, but at least some of it
+	is implemented, in some ways, in modern unix'es)
+
+	Installation routine (which has to be run as root) needs to grant icmond
+	privileges to use raw sockets for ICMP. This means executing a command:
+
+	setcap cap_net_raw+epi icmond
+
+	We need "inheritable" because the actul icmp action is performed by
+	a child process.
+
+	Capability Sets
+
+    Each thread has three capability sets containing zero or more capabilities.
+	Each of the capabilities also have one or more of the following attributes:
+    Effective - the capabilities used by the kernel to perform
+				permission checks for the thread.
+    Permitted - the capabilities that the thread may assume (i.e., a limiting
+				superset for the effective and inheritable sets). If a thread
+				drops a capability from its permitted set, it can never
+				re-acquire that capability (unless it exec()s a set-user-ID-root
+				program).
+    inheritable - the capabilities preserved across an execve(2). A child
+				created via fork(2) inherits copies of its parent's capability
+				sets. See below for a discussion of the treatment of
+				capabilities during exec(). Using capset(2), a thread may
+				manipulate its own capability sets, or, if it has the CAP_SETPCAP
+				capability, those of a thread in another process.
+
+	Ambient (since Linux 4.3):
+		This is a set of capabilities that are preserved across an execve(2) of
+		a program that is not privileged. The ambient capability set obeys the
+		invariant that no capability can ever be ambient if it is not both
+		permitted and inheritable.
+
+        The ambient capability set can be directly modified using prctl(2). 
+		Ambient capabilities are automatically lowered if either of the
+		corresponding permitted or inheritable capabilities is lowered.
+
+        Executing a program that changes UID or GID due to the set-user-ID or
+		set-group-ID bits or executing a program that has any file capabilities
+		set will clear the ambient set. Ambient capabilities are added to the
+		permitted set and assigned to the effective set when execve(2) is called.
+
+   A child created via fork(2) inherits copies of its parent's
+   capability sets.  See below for a discussion of the treatment of
+   capabilities during execve(2).
+
+    NOTE: 	It may be that even though we REQUIRE our daemon to be executed
+			as root, the action of privilege drop MAY wipe our capabilities.
+			These need to be somehow set up as inheritable.
+			CAP_NET_RAW
+	"When changing the owner or group of a process from root to non-root,
+	the effective capability set is always cleared. By default, also the
+	permitted capability set is cleared, but calling prctl(PR_SET_KEEPCAPS, 1L)
+	before the identity change tells the kernel to keep the permitted set intact."
+
+	prctl(PR_SET_KEEPCAPS, 1L, 0, 0)	(since 2.2.18)
+		Set the state of the thread's "keep capabilities" flag, which
+		determines whether the thread's permitted capability set is cleared
+		when a change is made to the thread's user IDs such that the thread's
+		real UID, effective UID, and saved set-user-ID all become nonzero when
+		at least one of them previously had the value 0. By default, the
+		permitted capability set is cleared when such a change is made; setting
+		the "keep capabilities" flag prevents it from being cleared. arg2 must
+        be either 0 (permitted capabilities are cleared) or 1 (permitted
+		capabilities are kept). (A thread's effective capability set is always
+		cleared when such a credential change is made, regardless of the
+		setting of the "keep capabilities" flag.) The "keep capabilities" value
+		will be reset to 0 on subsequent calls to execve(2).
+	PR_GET_KEEPCAPS (since Linux 2.2.18)
+        Return (as the function result) the current state of the calling
+		thread's "keep capabilities" flag.
+
+SQLite3 and Database Structures
+
+.help
+.tables							lists tables
+.schema	<tablename>				desc <tablename> (create statement, infact)
+	SELECT sql FROM sqlite_master WHERE name = '<tablename>'; (equivalent to .schema)
+PRAGMA table_info(<tablename>)	desc (not dependant on commandline tool!)
+
+-- I CAN use varying case in naming
+-- SQLite simply ignores case (case insensitive)
+-- Create statement will retain given case though
+CREATE TABLE data (
+    DateTime        INTEGER,
+    Ping            REAL,
+    dCh1dBbmV       REAL,
+    dCh1dB          REAL,
+    dCh2dBbmV       REAL,
+    dCh2dB          REAL,
+    dCh3dBbmV       REAL,
+    dCh3dB          REAL,
+    dCh4dBbmV       REAL,
+    dCh4dB          REAL,
+    dCh5dBbmV       REAL,
+    dCh5dB          REAL,
+    dCh6dBbmV       REAL,
+    dCh6dB          REAL,
+    dCh7dBbmV       REAL,
+    dCh7dB          REAL,
+    dCh8dBbmV       REAL,
+    dCh8dB          REAL,
+    uCh1dBmV        REAL,
+    uCh2dBmV        REAL,
+    uCh3dBmV        REAL,
+    uCh4dBmV        REAL
+);
+
+DateTime	SQLite3: INTEGER	C: time_t		Seconds since Unix epoch
+Ping		SQLite3: REAL		C: double		Delay in millisecond for the ICMP
+
+-- WebUI should always get latest bounds configurations (max(DateTime))
+-- NULL for those that do not care...
+CREATE TABLE bounds (
+    DateTime        INTEGER,
+    maxPing         REAL,
+    mindCh1dBbmV    REAL,
+    maxdCh1dBbmV    REAL,
+    mindCh1dB       REAL,
+    maxdCh1dB       REAL,
+    mindCh2dBbmV    REAL,
+    maxdCh2dBbmV    REAL,
+    mindCh2dB       REAL,
+    maxdCh2dB       REAL,
+    mindCh3dBbmV    REAL,
+    maxdCh3dBbmV    REAL,
+    mindCh3dB       REAL,
+    maxdCh3dB       REAL,
+    mindCh4dBbmV    REAL,
+    maxdCh4dBbmV    REAL,
+    mindCh4dB       REAL,
+    maxdCh4dB       REAL,
+    mindCh5dBbmV    REAL,
+    maxdCh5dBbmV    REAL,
+    mindCh5dB       REAL,
+    maxdCh5dB       REAL,
+    mindCh6dBbmV    REAL,
+    maxdCh6dBbmV    REAL,
+    mindCh6dB       REAL,
+    maxdCh6dB       REAL,
+    mindCh7dBbmV    REAL,
+    maxdCh7dBbmV    REAL,
+    mindCh7dB       REAL,
+    maxdCh7dB       REAL,
+    mindCh8dBbmV    REAL,
+    maxdCh8dBbmV    REAL,
+    mindCh8dB       REAL,
+    maxdCh8dB       REAL,
+    minuCh1dBmV     REAL,
+    maxuCh1dBmV     REAL,
+    minuCh2dBmV     REAL,
+    maxuCh2dBmV     REAL,
+    minuCh3dBmV     REAL,
+    maxuCh3dBmV     REAL,
+    minuCh4dBmV     REAL,
+    maxuCh4dBmV     REAL
+);
+
+Compiling
+
+    _GNU_SOURCE
+    This implementation requires functions that need __USE_GNU define.
+    This define however, is not something you should define (or undefine)
+    yourself, but do it via _GNU_SOURCE, and preferrably in the Makefile.
+    Such functions include for example; euidaccess().
+
+    __USE_GNU is defined internally through a mechanism in features.h
+    (which is included by all other glibc headers) when _GNU_SOURCE is defined,
+    and possibly under other conditions. Defining or undefining __USE_GNU
+    yourself will badly break the glibc headers.
+
+    _DEBUG
+    This will enable some runtime messages that may prove to useful to users.
+    The makefile defines this with -g switch.
+
+    __DEBUG
+    Define used exclusively with code development. Enabled code generally dump
+    variables and displays progress in extra detail.
+
+File and path
+
+    When the process is daemonized, it will change it's working directory to
+    filesystem root ("/") and any relative file location (configuration file
+    or database file) are no longer valid.
+
+    User given, potentially relative, filepaths cannot immediately be resolved
+    with canonicalize_file_name() because they might not exist.
+
+    Use case:
+    User has never used this program before and wishes to create configuration
+    file and database file.
+    
+    $ ./icmond -writeconfig -initdb -database=../../srv/icmond/icmond.sqlite3
+
+    The correct strategy is to accept relative filepaths until all commands
+    are executed (if there are commands, icmond exists after executing them).
+    The correct location to canonnicalize filepaths is after conditional
+    command if()'s are over, and prior to proceeding with daemonization.
+
+Data Location
+
+    SHORT ANSWER : /srv/icmond.sqlite3
+
+    http://www.pathname.com/fhs/pub/fhs-2.3.html
+
+    The Filesystem Hierarchy Standard provides a clear answer. It specifies
+    /srv as "contain[ing] site-specific data which is served by this system ".
+    (3.16.1)
+
+    "This main purpose of specifying this is so that users may find the
+     location of the data files for particular service, and so that services
+     which require a single tree for readonly data, writable data and scripts."
+
+    Note: 'Served by the system' doesn't necessarily refer to the Internet.
+          It needn't even mean a network. It's applicable to even a shared
+          system. Further, the words site and service should be understood in
+          their pre-internet meanings. Your site can be "the physics
+          department" or "the finances office".
+
+    It goes on to say:
+
+    "On large systems it can be useful to structure /srv by administrative
+     context, such as /srv/physics/www, /srv/compsci/cvs, etc. This setup will
+     differ from host to host. Therefore, no program should rely on a specific
+     subdirectory structure of /srv existing or data necessarily being stored
+     in /srv. However /srv should always exist on FHS compliant systems and
+     should be used as the default location for such data."
+
+    It should be mentioned that few people do this anymore. But there is no
+    good reason why they don't. The standard is by no means out of date.
+
+    /var is traditionally used for things like print-spools and log-files, but
+    it's also used by the Apache web server (on Debian systems anyway -
+    SUSE use /srv); There doesn't seem to be consensus on whether /var is a
+    proper directory for shared data.
+
+    The FHS says /srv " should be used as the default location for such data",
+    but the standard leaves some room for your own preference, depending on
+    how you interpret the terms.
+
+    ACCEPTABLE ALTERNATIVES
+
+    /usr/local/var/db/icmond.sqlite3
+    This would follow the less-than-formalized model of placing local data in
+    /usr/local and using var/ for "variable datafiles" then adding
+    db/icmond.sqlite3... The only "nagging thing" about the location there is
+    that this model fails to explain what does "local" mean. Why is the whole
+    filesystem not already very local to the system?
+
+    /var/db/icmond.sqlite3
+    This would take a stance on the question rised on the above location.
+    All software is "local" anyway, so the whole concept of "local" is redundant.
+    /var/ for "variable datafiles", db/ for database types and then our filename.
+
+    /var/log/icmond.sqlite3
+    This alternative would classify our SQLite3 datafile as a log. It may be
+    considered as one, but would be unlike any other in the same location.
+    (all the others are plain text, our "log" is binary)

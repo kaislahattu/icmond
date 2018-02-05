@@ -1,0 +1,76 @@
+#!/bin/sh
+#	04.09.2016, Jani Tammi
+#
+#	Modified in 2016 for update firmware.
+#	Valid for:
+#	Current Software Revision: 	epc3825-v302r125574-140405c
+#	Firmware Name:		 	epc3825-v302r125574-140405c.bin
+#	Firmware Build Time: 		Apr 5 02:32:49 2014
+#
+LOGFILE="test.log"
+SAVECSV="test.csv"
+DELIMITER=";"
+D=$DELIMITER
+
+echo "Cisco DOCSIS Signal Logger v.1.1-20160904 (c) Jani Tammi." >> $LOGFILE
+echo "["`date "+%Y.%m.%d %H:%M:%S"`"] Started..."                >> $LOGFILE
+
+# Create logfile and print header
+if [ ! -f $SAVECSV ]; then
+  echo -n "datetime${D}DnCh1 dBmV${D}DnCh1 dB${D}DnCh2 dBmV${D}DnCh2 dB${D}"                > $SAVECSV
+  echo -n "DnCh3 dBmV${D}DnCh3 dB${D}DnCh4 dBmV${D}DnCh4 dB${D}DnCh5 dBmV${D}DnCh5 dB${D}" >> $SAVECSV
+  echo -n "DnCh6 dBmV${D}DnCh6 dB${D}DnCh7 dBmV${D}DnCh7 dB${D}DnCh8 dBmV${D}DnCh8 dB${D}" >> $SAVECSV
+  echo -n "UpCh1 dBmV${D}UpCh2 dBmV${D}UpCh3 dBmV${D}UpCh4 dBmV\r\n"                       >> $SAVECSV
+fi
+
+# # loop until ctrl+c is executed
+while true; do
+
+  # These need to be updated each loop...
+  DATETIME=`date "+%Y.%m.%d %H:%M:%S"`
+  SAVEHTML="/tmp/docsis-"`date "+%Y.%m.%d_%H.%M.%S"`".html"
+
+  wget --quiet -O $SAVEHTML http://192.168.1.1/Docsis_system.asp
+  EXITCODE=$?
+
+  echo -n "${DATETIME}${DELIMITER}" >> $SAVECSV
+  if [ $EXITCODE -ne 0 ]; then
+    echo "[$DATETIME] wget could not retrieve Docsis_system.asp - return code ($EXITCODE)" >> $LOGFILE
+    echo -n "0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}" >> $SAVECSV
+    echo    "0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0${D}0,0\r"   >> $SAVECSV
+  else
+    # 2016, rewritten to read new firmware's HTML output
+    # EXTRACTS ONLY THE DOWNSTREAM <table>
+    DOWNTAB=`cat $SAVEHTML | sed -e '/.*<table class=\"std\" summary=\"Downstream Channels\">/,/<\/table>.*/!d'`
+    # strip tags and remove multiple spaces
+    DOWNRAW=`echo $DOWNTAB | sed 's/<[^>]\+>/ /g' | sed -e 's/  */ /g'`
+
+    DCH1=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 1[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH2=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 2[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH3=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 3[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH4=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 4[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH5=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 5[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH6=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 6[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH7=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 7[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+    DCH8=`echo $DOWNRAW |  sed -n "s/.*dw(vs_channel); 8[^0-9]*\([0-9]*\.[0-9]\)[^0-9]*\([0-9]*\.[0-9]\).*/\1${D}\2/p"`
+
+    # EXTRACTS ONLY THE UPSTREAM <table>
+    UPTAB=`cat $SAVEHTML | sed -e '/.*<table class=\"std\" summary=\"Upstream Channels\">/,/<\/table>.*/!d'`
+    # strip tags and remove multiple spaces
+    UPRAW=`echo $UPTAB | sed 's/<[^>]\+>/ /g' | sed -e 's/  */ /g'`
+
+    UCH1=`echo $UPRAW |  sed -n 's/.*dw(vs_channel); 1[^0-9]*\([0-9]*\.[0-9]\).*/\1/p'`
+    UCH2=`echo $UPRAW |  sed -n 's/.*dw(vs_channel); 2[^0-9]*\([0-9]*\.[0-9]\).*/\1/p'`
+    UCH3=`echo $UPRAW |  sed -n 's/.*dw(vs_channel); 3[^0-9]*\([0-9]*\.[0-9]\).*/\1/p'`
+    UCH4=`echo $UPRAW |  sed -n 's/.*dw(vs_channel); 4[^0-9]*\([0-9]*\.[0-9]\).*/\1/p'`
+
+    printf "${DCH1}${D}${DCH2}${D}${DCH3}${D}${DCH4}${D}${DCH5}${D}${DCH6}${D}${DCH7}${D}${DCH8}${D}" |
+	sed -e 's/\./,/' >> $SAVECSV
+    printf "${UCH1}${D}${UCH2}${D}${UCH3}${D}${UCH4}\n\r" |
+	sed -e 's/\./,/' >> $SAVECSV
+  fi
+  rm $SAVEHTML
+  echo "["`date "+%Y.%m.%d %H:%M:%S"`"] Data logged"  >> $LOGFILE
+  # # wait 10 seconds and do it all again
+  sleep 10
+done
