@@ -1,0 +1,70 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          cisco_docsis_logger
+# Required-Start:    $local_fs
+# Required-Stop:     $local_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Log Cisco EPC3825 DOCSIS model signals
+### END INIT INFO
+
+#
+# Version 1.0, 2012.11.16 - Jani Tammi
+#
+ENV="env -i LANG=C PATH=/usr/local/bin:/usr/bin:/bin"
+SCRIPTNAME="${0##*/}"
+SCRIPTNAME="${SCRIPTNAME##[KS][0-9][0-9]}"
+PIDFILE="/var/run/$SCRIPTNAME"
+
+do_start()
+{
+  # Return
+  #   0 if started successfully
+  #   1 if already running
+  #   2 if could not be started
+
+  cd /usr/local/bin
+  ./cisco_docsis_logger &
+
+  # make pidfile
+  touch "$PIDFILE" || return 1
+  return 2
+}
+
+do_stop()
+{
+  # Return
+  #   0 if stopped successfully
+  #   1 if already stopped
+  #   2 if could not be stopped
+  #   any other value for failure
+
+  [ ! -f "$PIDFILE" ] && return 1
+  killall cisco_docsis_logger
+  # killall returns a zero return code if at least one process has been killed
+  [ "$?" == 0 ] && { rm -f "$PIDFILE"; return 0; }
+  # unable to stop
+#  rm -f "$PIDFILE" # surely not a wise move to delete in this case...
+  return 2
+}
+
+case "$1" in
+  start)
+    do_start
+    ;;
+  restart|reload|force-reload)
+    echo "Error: argument '$1' not supported" >&2
+    exit 3
+    ;;
+  stop|"")
+    do_stop
+    ;;
+  *)
+    echo "Usage: $SCRIPTNAME {start|stop}" >&2
+    exit 1
+    ;;
+esac
+
+exit 0
+
+# EOF
